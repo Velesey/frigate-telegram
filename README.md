@@ -7,6 +7,7 @@ Frigate telegram event notifications.
 
 ---
 
+
 ## Example of work
 
 ![alt text](https://raw.githubusercontent.com/OldTyT/frigate-telegram/main/resources/img/telegram_msg.png)
