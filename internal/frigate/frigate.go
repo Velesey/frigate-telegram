@@ -310,81 +310,94 @@ func GetEvents(FrigateURL string, bot *tgbotapi.BotAPI, SetBefore bool) EventsSt
 	return Events
 }
 
-func SaveClip(EventID string, bot *tgbotapi.BotAPI) string {
-	// Get config
+func SaveClip(EventID string) string {
 	conf := config.New()
-
-	// Generate clip URL
 	ClipURL := conf.FrigateURL + "/api/events/" + EventID + "/clip.mp4"
 	log.Debug.Println("Downloading clip from URL: " + ClipURL)
 
-	// Generate uniq filename
 	filename := "/tmp/" + EventID + ".mp4"
-
-	// Download clip file
-	resp, err := http.Get(ClipURL)
-	if err != nil {
-		ErrorSend("Error clip download: "+err.Error(), bot, EventID)
+	maxWaitSeconds := conf.TimeWaitSave
+	if maxWaitSeconds < 0 {
+		maxWaitSeconds = 0
 	}
-	defer resp.Body.Close()
+	deadline := time.Now().Add(time.Duration(maxWaitSeconds) * time.Second)
 
-	// Check server response
-	if resp.StatusCode != http.StatusOK {
-		ErrorSend("Return bad status: "+resp.Status, bot, EventID)
+	for {
+		resp, err := http.Get(ClipURL)
+		if err != nil {
+			log.Warn.Printf("Error clip download for event %s: %s", EventID, err.Error())
+			return ""
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			status := resp.Status
+			resp.Body.Close()
+
+			if time.Now().After(deadline) {
+				log.Warn.Printf("Clip for event %s is not ready after %d seconds (last status: %s)", EventID, maxWaitSeconds, status)
+				return ""
+			}
+
+			log.Debug.Printf("Clip for event %s is not ready yet (%s). Retry in 1 second.", EventID, status)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		contentLength := resp.ContentLength
+		if contentLength == 0 {
+			resp.Body.Close()
+			log.Warn.Printf("Received empty clip from server for event %s (content length is 0)", EventID)
+			return ""
+		}
+		log.Debug.Printf("Expected content length: %d bytes", contentLength)
+
+		f, err := os.Create(filename)
+		if err != nil {
+			resp.Body.Close()
+			log.Warn.Printf("Error when create clip file for event %s: %s", EventID, err.Error())
+			return ""
+		}
+
+		bytesWritten, err := io.Copy(f, resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			f.Close()
+			log.Warn.Printf("Error clip write for event %s: %s", EventID, err.Error())
+			return ""
+		}
+		log.Debug.Printf("Written %d bytes to %s", bytesWritten, filename)
+
+		if bytesWritten == 0 {
+			f.Close()
+			log.Warn.Printf("No data written to clip file for event %s", EventID)
+			return ""
+		}
+
+		if err := f.Sync(); err != nil {
+			f.Close()
+			log.Warn.Printf("Error syncing clip file to disk for event %s: %s", EventID, err.Error())
+			return ""
+		}
+
+		if err := f.Close(); err != nil {
+			log.Warn.Printf("Error closing clip file for event %s: %s", EventID, err.Error())
+			return ""
+		}
+
+		fileInfo, err := os.Stat(filename)
+		if err != nil {
+			log.Warn.Printf("Error verifying clip file for event %s: %s", EventID, err.Error())
+			return ""
+		}
+
+		if fileInfo.Size() == 0 {
+			log.Warn.Printf("Clip file is empty after download for event %s", EventID)
+			return ""
+		}
+
+		log.Debug.Printf("Successfully downloaded clip to %s (size: %d bytes)", filename, fileInfo.Size())
+		return filename
 	}
-
-	// Read content length if available
-	contentLength := resp.ContentLength
-	if contentLength == 0 {
-		WarnSend("Received empty clip from server (content length is 0)", bot, EventID)
-		return ""
-	}
-	log.Debug.Printf("Expected content length: %d bytes", contentLength)
-
-	// Create clip file
-	f, err := os.Create(filename)
-	if err != nil {
-		ErrorSend("Error when create file: "+err.Error(), bot, EventID)
-	}
-	defer f.Close() // Ensure file is closed even if there's an error
-
-	// Writer the body to file
-	bytesWritten, err := io.Copy(f, resp.Body)
-	if err != nil {
-		ErrorSend("Error clip write: "+err.Error(), bot, EventID)
-	}
-	log.Debug.Printf("Written %d bytes to %s", bytesWritten, filename)
-
-	// Check if we wrote anything
-	if bytesWritten == 0 {
-		WarnSend("No data written to clip file", bot, EventID)
-		return ""
-	}
-
-	// Ensure file is properly synced to disk
-	err = f.Sync()
-	if err != nil {
-		ErrorSend("Error syncing file to disk: "+err.Error(), bot, EventID)
-	}
-
-	// Close the file
-	err = f.Close()
-	if err != nil {
-		ErrorSend("Error closing clip file: "+err.Error(), bot, EventID)
-	}
-
-	// Verify file exists and has content
-	fileInfo, err := os.Stat(filename)
-	if err != nil {
-		ErrorSend("Error verifying clip file: "+err.Error(), bot, EventID)
-	}
-
-	if fileInfo.Size() == 0 {
-		ErrorSend("Clip file is empty after download", bot, EventID)
-	}
-
-	log.Debug.Printf("Successfully downloaded clip to %s (size: %d bytes)", filename, fileInfo.Size())
-	return filename
 }
 
 func SendMessageEvent(FrigateEvent EventStruct, bot *tgbotapi.BotAPI) {
@@ -480,7 +493,7 @@ func SendMessageEvent(FrigateEvent EventStruct, bot *tgbotapi.BotAPI) {
 
 	if FrigateEvent.HasClip && FrigateEvent.EndTime != 0 {
 		// Save clip
-		FilePathClip = SaveClip(FrigateEvent.ID, bot)
+		FilePathClip = SaveClip(FrigateEvent.ID)
 		hasClip = true
 		if FilePathClip == "" {
 			hasClip = false

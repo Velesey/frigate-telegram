@@ -14,6 +14,7 @@ type Config struct {
 	IncludeThumbnailEvent   bool
 	FrigateEventLimit       int
 	SleepTime               int
+	TimeWaitSave            int
 	RedisDB                 int
 	RedisProtocol           int
 	RedisTTL                int
@@ -43,6 +44,7 @@ func New() *Config {
 		Debug:                   getEnvAsBool("DEBUG", false),
 		TelegramChatID:          getEnvAsInt64("TELEGRAM_CHAT_ID", 0),
 		SleepTime:               getEnvAsInt("SLEEP_TIME", 5),
+		TimeWaitSave:            getEnvAsInt("TIME_WAIT_SAVE", 30),
 		WatchDogSleepTime:       getEnvAsInt("WATCH_DOG_SLEEP_TIME", 3),
 		FrigateExternalURL:      getEnv("FRIGATE_EXTERNAL_URL", "http://localhost:5000"),
 		RedisAddr:               getEnv("REDIS_ADDR", "localhost:6379"),

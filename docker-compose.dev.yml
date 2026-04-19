@@ -22,6 +22,7 @@ services:
       DEBUG: False
       TELEGRAM_CHAT_ID: $TELEGRAM_CHAT_ID
       SLEEP_TIME: 15
+      TIME_WAIT_SAVE: 30
       FRIGATE_EXTERNAL_URL: https://frigate.domain.com
       TZ: Europe/Berlin
       REDIS_ADDR: "redis:6379"
